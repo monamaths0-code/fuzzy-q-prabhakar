@@ -6,7 +6,6 @@ through $q$-Fuzzy Prabhakar Operators and their Consequences*.
 Everything in the paper's Sections 4 and 5 can be regenerated from this repository.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/monamaths0-code/fuzzy-q-prabhakar/blob/main/notebooks/ML_validation.ipynb)
-> Replace `USERNAME/REPO` in the badge URL with your GitHub path after uploading.
 
 ## What this package does
 
@@ -16,9 +15,11 @@ Everything in the paper's Sections 4 and 5 can be regenerated from this reposito
 3. Runs the machine-learning validation study of Section 5 and writes all figures and tables.
 
 ## Installation
+```bash
 git clone https://github.com/monamaths0-code/fuzzy-q-prabhakar.git
 cd fuzzy-q-prabhakar
 pip install -r requirements.txt
+```
 
 Python 3.9 or later. No GPU required; the full study runs in under two minutes on a laptop.
 
