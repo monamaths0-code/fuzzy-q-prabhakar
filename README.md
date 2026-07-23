@@ -5,7 +5,7 @@ through $q$-Fuzzy Prabhakar Operators and their Consequences*.
 
 Everything in the paper's Sections 4 and 5 can be regenerated from this repository.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ /monamaths0-code/fuzzy-q-prabhakar/blob/main/notebooks/ML_validation.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/USERNAME/REPO/blob/main/notebooks/ML_validation.ipynb)
 
 > Replace `USERNAME/REPO` in the badge URL with your GitHub path after uploading.
 
@@ -19,7 +19,7 @@ Everything in the paper's Sections 4 and 5 can be regenerated from this reposito
 ## Installation
 
 ```bash
-git clone https://github.com/monamaths0-code/fuzzy-q-prabhakar.git
+git clone https://github.com/USERNAME/REPO.git
 cd REPO
 pip install -r requirements.txt
 ```
@@ -97,14 +97,15 @@ regenerate the figures so the reported numbers stay consistent.
 
 ## Citation
 
-@article{haseeb_siddiq_ali_qprabhakar,
-  author  = {Haseeb, Muhammad and Siddiq, Mamoona and Ali, Rana Safdar},
+```bibtex
+@article{haseeb_ali_qprabhakar,
+  author  = {Haseeb, Muhammad and Ali, Rana Safdar},
   title   = {New Refinements of Hermite--Hadamard Inequalities through
-             $q$-Fuzzy Prabhakar Operators with an Application to
-             Machine Learning Validation},
-  year    = {2026},
-  note    = {Preprint. Code and data: \url{ https://github.com/monamaths0-code/fuzzy-q-prabhakar}}
+             $q$-Fuzzy Prabhakar Operators and their Consequences},
+  note    = {Manuscript}
 }
+```
+
 ## License
 
 Released under the MIT License; see `LICENSE`.
