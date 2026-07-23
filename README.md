@@ -97,15 +97,14 @@ regenerate the figures so the reported numbers stay consistent.
 
 ## Citation
 
-```bibtex
-@article{haseeb_ali_qprabhakar,
-  author  = {Haseeb, Muhammad and Ali, Rana Safdar},
+@article{haseeb_siddiq_ali_qprabhakar,
+  author  = {Haseeb, Muhammad and Siddiq, Mamoona and Ali, Rana Safdar},
   title   = {New Refinements of Hermite--Hadamard Inequalities through
-             $q$-Fuzzy Prabhakar Operators and their Consequences},
-  note    = {Manuscript}
+             $q$-Fuzzy Prabhakar Operators with an Application to
+             Machine Learning Validation},
+  year    = {2026},
+  note    = {Preprint. Code and data: \url{https://github.com/USERNAME/REPO}}
 }
-```
-
 ## License
 
 Released under the MIT License; see `LICENSE`.
