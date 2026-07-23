@@ -1,64 +1,408 @@
-"""Left q-Prabhakar fractional integral and the kernel constants K0, I_R."""
-from .qcalculus import q_pochhammer, q_gamma, q_prabhakar_E
-
-
-def _kernel_weight(n, mu, q):
-    """(q^{n+1};q)_inf / (q^{mu+n};q)_inf  -- the q-power kernel factor."""
-    return q_pochhammer(q ** (n + 1), q, None) / q_pochhammer(q ** (mu + n), q, None)
-
-
-def _E_factor(n, L, eta, mu, gamma, lam, q):
-    if lam == 0:
-        return 1.0 / q_gamma(mu, q)
-    z = lam * (L ** eta) * q_pochhammer(q ** (n + 1), q, None) \
-        / q_pochhammer(q ** (eta + n + 1), q, None)
-    return q_prabhakar_E(z, gamma, eta, mu, q)
-
-
-def qprab_integral(f, xi1, xi2, eta, mu, gamma, lam, q, n_max=4000):
-    """Left q-Prabhakar fractional integral  ( _{xi1} E^{eta,mu}_{gamma,lam;q} f )(xi2).
-
-    Nodes are t_n = xi1 + q^n (xi2 - xi1).
-    """
-    L = xi2 - xi1
-    total = 0.0
-    for n in range(n_max):
-        w = q ** n
-        if w < 1e-16:
-            break
-        E = _E_factor(n, L, eta, mu, gamma, lam, q)
-        total += w * _kernel_weight(n, mu, q) * E * f(xi1 + w * L)
-    return (1.0 - q) * (L ** mu) * total
-
-
-def _unit_kernel(eta, mu, gamma, lam, q, weight, n_max=4000):
-    """Integral over [0,1] of the kernel times an optional weight w(zeta)."""
-    total = 0.0
-    for n in range(n_max):
-        w = q ** n
-        if w < 1e-16:
-            break
-        x = q ** (n + 1)
-        poch = q_pochhammer(x, q, None)
-        base_mu = poch / q_pochhammer(x * q ** (mu - 1), q, None)
-        if lam == 0:
-            E = 1.0 / q_gamma(mu, q)
-        else:
-            base_eta = poch / q_pochhammer(x * q ** eta, q, None)
-            E = q_prabhakar_E(lam * base_eta, gamma, eta, mu, q)
-        total += w * base_mu * E * (1.0 if weight is None else weight(q ** n))
-    return (1.0 - q) * total
-
-
-def kernel_K0(eta, mu, gamma, lam, q):
-    """K0: the kernel constant normalising the left-hand term of Theorem 3.2.
-
-    Equals E^gamma_{eta,mu+1}(lam) only when gamma = 1.
-    """
-    return _unit_kernel(eta, mu, gamma, lam, q, None)
-
-
-def kernel_IR(eta, mu, gamma, lam, q, inv_h):
-    """I_R: kernel constant of the right-hand term; inv_h(z) = 1/h(z)."""
-    return _unit_kernel(eta, mu, gamma, lam, q,
-                        lambda z: inv_h(z) + inv_h(1.0 - z))
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Validating Hermite\u2013Hadamard Inclusions for Fuzzy $q$-Prabhakar Operators\n",
+    "\n",
+    "Companion notebook to *New Refinements of Hermite\u2013Hadamard Inequalities through $q$-Fuzzy Prabhakar Operators and their Consequences*.\n",
+    "\n",
+    "Run every cell from top to bottom. Nothing needs to be installed beyond the Colab defaults.\n",
+    "\n",
+    "**What we do**\n",
+    "\n",
+    "1. Build the $q$-Prabhakar machinery and check it against a known value.\n",
+    "2. Reproduce the numerical examples of Section 4.\n",
+    "3. Run the machine-learning validation study of Section 5.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 0. Setup"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "!pip -q install numpy scikit-learn matplotlib\n",
+    "\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "from sklearn.neural_network import MLPRegressor\n",
+    "from sklearn.linear_model import Ridge\n",
+    "from sklearn.preprocessing import PolynomialFeatures\n",
+    "from sklearn.pipeline import make_pipeline\n",
+    "from sklearn.metrics import mean_squared_error\n",
+    "\n",
+    "plt.rcParams.update({'figure.dpi':120,'axes.grid':True,'grid.alpha':.25,'grid.linestyle':':'})\n",
+    "print('ready')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. The $q$-Prabhakar machinery\n",
+    "\n",
+    "We need the $q$-Pochhammer symbol $(a;q)_n$, the $q$-Gamma function, the $q$-Prabhakar function\n",
+    "\n",
+    "$$E^{\\gamma}_{\\eta,\\mu,q}(z)=\\sum_{k\\ge 0}\\frac{(\\gamma;q)_k}{(q;q)_k}\\frac{z^k}{\\Gamma_q(\\eta k+\\mu)},$$\n",
+    "\n",
+    "and the left $q$-Prabhakar fractional integral."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "def q_pochhammer(a, q, n=None, n_inf=4000):\n",
+    "    if n is None:\n",
+    "        prod = 1.0\n",
+    "        for k in range(n_inf):\n",
+    "            t = a*q**k\n",
+    "            prod *= (1.0-t)\n",
+    "            if abs(t) < 1e-18: break\n",
+    "        return prod\n",
+    "    prod = 1.0\n",
+    "    for k in range(n): prod *= (1.0-a*q**k)\n",
+    "    return prod\n",
+    "\n",
+    "def q_gamma(x, q):\n",
+    "    return q_pochhammer(q,q,None)/q_pochhammer(q**x,q,None)*(1.0-q)**(1.0-x)\n",
+    "\n",
+    "def q_prabhakar_E(z, gamma, eta, mu, q, k_max=60):\n",
+    "    s = 0.0\n",
+    "    for k in range(k_max):\n",
+    "        c = q_pochhammer(gamma,q,k)/q_pochhammer(q,q,k)\n",
+    "        t = c*(z**k)/q_gamma(eta*k+mu,q)\n",
+    "        s += t\n",
+    "        if k > 3 and abs(t) < 1e-16: break\n",
+    "    return s\n",
+    "\n",
+    "print('Gamma_(1/2)(3) =', q_gamma(3,0.5), ' (exact 1.5)')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "def qprab_integral(f, xi1, xi2, eta, mu, gamma, lam, q, n_max=4000):\n",
+    "    \"\"\"( _{xi1} E^{eta,mu}_{gamma,lam;q} f )(xi2), nodes t_n = xi1 + q^n (xi2-xi1).\"\"\"\n",
+    "    L = xi2 - xi1\n",
+    "    tot = 0.0\n",
+    "    for n in range(n_max):\n",
+    "        w = q**n\n",
+    "        if w < 1e-16: break\n",
+    "        if lam == 0:\n",
+    "            E = 1.0/q_gamma(mu,q)\n",
+    "        else:\n",
+    "            z = lam*(L**eta)*q_pochhammer(q**(n+1),q,None)/q_pochhammer(q**(eta+n+1),q,None)\n",
+    "            E = q_prabhakar_E(z,gamma,eta,mu,q)\n",
+    "        kern = q_pochhammer(q**(n+1),q,None)/q_pochhammer(q**(mu+n),q,None)\n",
+    "        tot += w*kern*E*f(xi1+w*L)\n",
+    "    return (1.0-q)*(L**mu)*tot\n",
+    "\n",
+    "def _unit_kernel(eta, mu, gamma, lam, q, weight=None, n_max=4000):\n",
+    "    tot = 0.0\n",
+    "    for n in range(n_max):\n",
+    "        w = q**n\n",
+    "        if w < 1e-16: break\n",
+    "        x = q**(n+1); poch = q_pochhammer(x,q,None)\n",
+    "        base_mu = poch/q_pochhammer(x*q**(mu-1),q,None)\n",
+    "        if lam == 0:\n",
+    "            E = 1.0/q_gamma(mu,q)\n",
+    "        else:\n",
+    "            E = q_prabhakar_E(lam*poch/q_pochhammer(x*q**eta,q,None), gamma,eta,mu,q)\n",
+    "        tot += w*base_mu*E*(1.0 if weight is None else weight(q**n))\n",
+    "    return (1.0-q)*tot\n",
+    "\n",
+    "kernel_K0 = lambda eta,mu,gamma,lam,q: _unit_kernel(eta,mu,gamma,lam,q)\n",
+    "kernel_IR = lambda eta,mu,gamma,lam,q,inv_h: _unit_kernel(eta,mu,gamma,lam,q, lambda z: inv_h(z)+inv_h(1-z))\n",
+    "print('K0 (gamma=1, lam=0) =', kernel_K0(1,2,1,0,0.5))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Two facts worth checking yourself\n",
+    "\n",
+    "**$\\gamma=1$ is degenerate.** $(\\gamma;q)_k$ vanishes for $k\\ge1$, so $E$ collapses to $1/\\Gamma_q(\\mu)$ and $\\lambda$ has no effect at all.\n",
+    "\n",
+    "**The closed form is not always $K_0$.** The normaliser $E^{\\gamma}_{\\eta,\\mu+1}(\\lambda)$ agrees with the kernel integral $K_0$ only when $\\gamma=1$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "for gamma in [1.0, 0.5]:\n",
+    "    for lam in [0.0, 1.0]:\n",
+    "        K0 = kernel_K0(1,2,gamma,lam,0.5)\n",
+    "        E  = (1/q_gamma(3,0.5)) if lam==0 else q_prabhakar_E(lam,gamma,1,3,0.5)\n",
+    "        print(f'gamma={gamma}  lam={lam}:  K0={K0:.6f}   E_(mu+1)={E:.6f}   equal={abs(K0-E)<1e-6}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. The Hermite\u2013Hadamard terms\n",
+    "\n",
+    "For a fuzzy interval-valued function given level-wise by $[\\underline f_\\varrho,\\overline f_\\varrho]$, Theorem 3.2 asserts\n",
+    "\n",
+    "$$\\text{Left}\\supseteq\\text{Middle}\\supseteq\\text{Right}.$$\n",
+    "\n",
+    "We also record four *margins* whose non-negativity is equivalent to that inclusion."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "H     = lambda z: 1.0/z if z>0 else float('inf')   # h(z) = 1/z\n",
+    "INV_H = lambda z: z                                 # 1/h(z)\n",
+    "\n",
+    "def hh_terms(f_low, f_up, level, xi1, xi2, eta, mu, gamma, lam, q):\n",
+    "    L = xi2-xi1; mid = 0.5*(xi1+xi2)\n",
+    "    fl = lambda k: f_low(k,level); fu = lambda k: f_up(k,level)\n",
+    "    mirror = lambda g: (lambda k: g(xi1+xi2-k))\n",
+    "    K0 = kernel_K0(eta,mu,gamma,lam,q); IR = kernel_IR(eta,mu,gamma,lam,q,INV_H)\n",
+    "    left = (H(0.5)*K0*fl(mid), H(0.5)*K0*fu(mid))\n",
+    "    both = lambda g: (qprab_integral(g,xi1,xi2,eta,mu,gamma,lam,q)\n",
+    "                      + qprab_integral(mirror(g),xi1,xi2,eta,mu,gamma,lam,q))/L**mu\n",
+    "    middle = (both(fl), both(fu))\n",
+    "    right = ((fl(xi1)+fl(xi2))*IR, (fu(xi1)+fu(xi2))*IR)\n",
+    "    return left, middle, right\n",
+    "\n",
+    "def inclusion_margins(L, M, R):\n",
+    "    return (M[0]-L[0], R[0]-M[0], M[1]-R[1], L[1]-M[1])\n",
+    "print('defined')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Section 4 \u2014 numerical examples\n",
+    "\n",
+    "**Example A** uses $\\gamma=1,\\lambda=0$ (the Riemann\u2013Liouville reduction). **Example B** uses $\\gamma=1/2,\\lambda=1$, so the Prabhakar structure is genuinely exercised."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "f_low = lambda k,r: (1-r)*k**2 + 4*r\n",
+    "f_up  = lambda k,r: (1-r)*(9-k**2) + 4*r\n",
+    "\n",
+    "for name, gamma, lam in [('A', 1.0, 0.0), ('B', 0.5, 1.0)]:\n",
+    "    print(f'--- Example {name}:  gamma={gamma}, lambda={lam},  K0={kernel_K0(1,2,gamma,lam,0.5):.4f}')\n",
+    "    for r in [0, 0.25, 0.5, 0.75, 1.0]:\n",
+    "        L,M,R = hh_terms(f_low,f_up,r, 0,1, 1,2, gamma,lam, 0.5)\n",
+    "        ok = all(x >= -1e-9 for x in inclusion_margins(L,M,R))\n",
+    "        print(f'   rho={r:4.2f}  L=[{L[0]:7.4f},{L[1]:8.4f}]  M=[{M[0]:7.4f},{M[1]:8.4f}]'\n",
+    "              f'  R=[{R[0]:7.4f},{R[1]:8.4f}]   {\"OK\" if ok else \"FAIL\"}')\n",
+    "    print()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Section 5 \u2014 the machine-learning study\n",
+    "\n",
+    "In practice the endpoints are known only through noisy measurements. We generate such data, fit two surrogates, apply the operator to the *learned* endpoints, and test whether the inclusion survives.\n",
+    "\n",
+    "### Step 1 \u2014 noisy observations"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "SEED, N_TRAIN, N_TEST, SIGMA = 0, 3000, 800, 0.10\n",
+    "rng = np.random.default_rng(SEED)\n",
+    "\n",
+    "kt, rt = rng.uniform(0,1,N_TRAIN), rng.uniform(0,1,N_TRAIN)\n",
+    "Xtr = np.column_stack([kt,rt])\n",
+    "ytr_lo = f_low(kt,rt) + rng.normal(0,SIGMA,N_TRAIN)\n",
+    "ytr_up = f_up(kt,rt)  + rng.normal(0,SIGMA,N_TRAIN)\n",
+    "\n",
+    "kv, rv = rng.uniform(0,1,N_TEST), rng.uniform(0,1,N_TEST)\n",
+    "Xte = np.column_stack([kv,rv]); yte_lo, yte_up = f_low(kv,rv), f_up(kv,rv)\n",
+    "\n",
+    "plt.figure(figsize=(5,3.4))\n",
+    "for r,c in [(0.2,'#2166ac'),(0.7,'#8fb9d8')]:\n",
+    "    kk = np.linspace(0,1,80)\n",
+    "    plt.plot(kk,f_low(kk,r),color=c); plt.plot(kk,f_up(kk,r),color=c)\n",
+    "    s = rng.uniform(0,1,60)\n",
+    "    plt.plot(s,f_low(s,r)+rng.normal(0,SIGMA,60),'o',ms=2.5,color=c,alpha=.5)\n",
+    "    plt.plot(s,f_up(s,r)+rng.normal(0,SIGMA,60),'o',ms=2.5,color=c,alpha=.5)\n",
+    "plt.xlabel(r'$\\kappa$'); plt.ylabel('endpoints'); plt.title('noisy observations'); plt.show()\n",
+    "print(f'{N_TRAIN} training and {N_TEST} test samples')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Step 2 \u2014 two surrogates\n",
+    "\n",
+    "One flexible network with no structural constraint, one model consistent with the $h$-Godunova\u2013Levin geometry (convex lower endpoint, concave upper endpoint)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "def wrap(m):\n",
+    "    def g(k,r):\n",
+    "        k = np.atleast_1d(np.asarray(k,float))\n",
+    "        p = m.predict(np.column_stack([k,np.full_like(k,r)]))\n",
+    "        return p[0] if p.size==1 else p\n",
+    "    return g\n",
+    "\n",
+    "def n_params(m):\n",
+    "    if isinstance(m, MLPRegressor):\n",
+    "        return sum(w.size for w in m.coefs_) + sum(b.size for b in m.intercepts_)\n",
+    "    return m.named_steps['ridge'].coef_.size + 1\n",
+    "\n",
+    "nn_lo = MLPRegressor(hidden_layer_sizes=(80,80),max_iter=5000,random_state=1).fit(Xtr,ytr_lo)\n",
+    "nn_up = MLPRegressor(hidden_layer_sizes=(80,80),max_iter=5000,random_state=2).fit(Xtr,ytr_up)\n",
+    "sa_lo = make_pipeline(PolynomialFeatures(2), Ridge(alpha=1e-3)).fit(Xtr,ytr_lo)\n",
+    "sa_up = make_pipeline(PolynomialFeatures(2), Ridge(alpha=1e-3)).fit(Xtr,ytr_up)\n",
+    "\n",
+    "print(f'neural network  : {n_params(nn_lo)+n_params(nn_up):6d} trainable parameters')\n",
+    "print(f'structure-aware : {n_params(sa_lo)+n_params(sa_up):6d} trainable parameters')\n",
+    "print(f'training samples: {N_TRAIN}   <-- the network has more parameters than data points')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Steps 3 and 4 \u2014 apply the operator to the learned endpoints, then measure the margins"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "LEVELS = np.linspace(0,1,11)\n",
+    "\n",
+    "def study(g_lo, g_up):\n",
+    "    marg, terms = [], []\n",
+    "    for r in LEVELS:\n",
+    "        L,M,R = hh_terms(g_lo,g_up,r, 0,1, 1,2, 1.0,0.0, 0.5)\n",
+    "        marg.append(min(inclusion_margins(L,M,R))); terms.append((L,M,R))\n",
+    "    return np.array(marg), terms\n",
+    "\n",
+    "models = {'Flexible neural network': (wrap(nn_lo), wrap(nn_up), nn_lo, nn_up),\n",
+    "          'Structure-aware model'  : (wrap(sa_lo), wrap(sa_up), sa_lo, sa_up)}\n",
+    "out = {}\n",
+    "for name,(g_lo,g_up,m_lo,m_up) in models.items():\n",
+    "    marg, terms = study(g_lo,g_up)\n",
+    "    rmse = (np.sqrt(mean_squared_error(yte_lo,m_lo.predict(Xte))),\n",
+    "            np.sqrt(mean_squared_error(yte_up,m_up.predict(Xte))))\n",
+    "    out[name] = (marg, terms, rmse, g_lo, g_up)\n",
+    "    print(f'{name:26s} RMSE=({rmse[0]:.4f},{rmse[1]:.4f})   '\n",
+    "          f'inclusion {int((marg>=-5e-4).sum())}/11   min margin {marg.min():+.4f}')\n",
+    "\n",
+    "marg_true,_ = study(f_low,f_up)\n",
+    "print(f'{\"Exact function\":26s} {\"\":24s}inclusion {int((marg_true>=-5e-4).sum())}/11   min margin {marg_true.min():+.4f}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Result\n",
+    "\n",
+    "The network attains a small fitting error yet breaks the inclusion, while the structure-aware model keeps a positive margin everywhere. Note where the violations sit: the exact function's own margin shrinks to zero as $\\varrho\\to1$, so the inequality is tightest \u2014 and most discriminating \u2014 exactly there."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": [
+    "fig, ax = plt.subplots(1,2, figsize=(11,4))\n",
+    "\n",
+    "ax[0].plot(LEVELS, out['Flexible neural network'][0], color='#c0392b', marker='x', lw=1.8, label='neural network')\n",
+    "ax[0].plot(LEVELS, out['Structure-aware model'][0],  color='#1b7837', marker='o', lw=1.8, label='structure-aware')\n",
+    "ax[0].plot(LEVELS, marg_true, color='0.3', ls=':', lw=1.2, label='exact function')\n",
+    "ax[0].axhline(0, color='0.25', lw=1.2)\n",
+    "ax[0].fill_between(LEVELS, np.minimum(out['Flexible neural network'][0],0), 0, color='#c0392b', alpha=.13)\n",
+    "ax[0].set_xlabel(r'$\\varrho$'); ax[0].set_ylabel('smallest inclusion margin')\n",
+    "ax[0].set_title('theory-consistency diagnostic')\n",
+    "ax[0].legend(loc='lower left', framealpha=1)\n",
+    "y0,y1 = ax[0].get_ylim(); ax[0].set_ylim(y0-.22*(y1-y0), y1+.10*(y1-y0))\n",
+    "\n",
+    "CC = dict(left='#1b7837', mid='#e08214', right='#2166ac')\n",
+    "for r,(L,M,R) in zip(LEVELS, out['Structure-aware model'][1]):\n",
+    "    ax[1].plot([L[0],L[1]],[r,r], color=CC['left'],  lw=7, alpha=.55, solid_capstyle='butt')\n",
+    "    ax[1].plot([M[0],M[1]],[r,r], color=CC['mid'],   lw=4, alpha=.85, solid_capstyle='butt')\n",
+    "    ax[1].plot([R[0],R[1]],[r,r], color=CC['right'], lw=1.8, solid_capstyle='butt')\n",
+    "for k,lw,a,nm in [('left',7,.55,'Left'),('mid',4,.85,'Middle'),('right',1.8,1,'Right')]:\n",
+    "    ax[1].plot([],[],color=CC[k],lw=lw,alpha=a,label=nm+' term')\n",
+    "ax[1].legend(loc='upper left', framealpha=1)\n",
+    "x0,x1 = ax[1].get_xlim(); ax[1].set_xlim(x0-.42*(x1-x0), x1+.05*(x1-x0)); ax[1].set_ylim(-.06,1.16)\n",
+    "ax[1].set_xlabel('interval bound'); ax[1].set_ylabel(r'$\\varrho$')\n",
+    "ax[1].set_title('inclusion recovered from learned model')\n",
+    "plt.tight_layout(); plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Try it yourself\n",
+    "\n",
+    "A few things worth changing:\n",
+    "\n",
+    "- Raise `SIGMA` and watch the structure-aware margin shrink until it too fails.\n",
+    "- Set `gamma = 1.0` with different `lam` values in Section 3 and confirm the results do not move at all.\n",
+    "- Replace the degree-2 features with degree 5 and see whether the extra flexibility costs consistency.\n",
+    "- Swap the ground-truth function for one of your own, keeping the lower endpoint convex and the upper endpoint concave."
+   ]
+  }
+ ],
+ "metadata": {
+  "colab": {
+   "provenance": []
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}
